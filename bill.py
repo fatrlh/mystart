@@ -49,7 +49,6 @@ def process_data(intermediate_2, output_file):
     with open(intermediate_2, 'r', encoding='utf-8') as infile, open(output_file, 'w', encoding='utf-8') as outfile:
         for line in infile:
             line = line.strip()
-            print(f"Processing line: {line}")  # 调试信息：打印当前处理的行
             # 定位 "人民币"
             rmb_index = line.find('人民币')
             if rmb_index != -1:
@@ -59,7 +58,6 @@ def process_data(intermediate_2, output_file):
                 if amount_end == -1:
                     amount_end = len(line)
                 amount_str = line[amount_start:amount_end].strip()
-                print(f"Extracted amount string: '{amount_str}'")  # 调试信息：打印提取的金额字段
                 # 清理金额字符串，去除逗号和其他非数字字符（除了小数点）
                 cleaned_amount_str = ''.join(char for char in amount_str if char.isdigit() or char == '.')
                 print(f"Cleaned amount string: '{cleaned_amount_str}'")  # 调试信息：打印清理后的金额字段
