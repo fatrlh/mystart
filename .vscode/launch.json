@@ -9,6 +9,7 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
+            "redirectOutput": true,
             "console": "internalConsole"
         }
     ]
