@@ -60,7 +60,6 @@ def process_data(intermediate_2, output_file):
                 amount_str = line[amount_start:amount_end].strip()
                 # 清理金额字符串，去除逗号和其他非数字字符（除了小数点）
                 cleaned_amount_str = ''.join(char for char in amount_str if char.isdigit() or char == '.')
-                print(f"Cleaned amount string: '{cleaned_amount_str}'")  # 调试信息：打印清理后的金额字段
                 # 转换为数字
                 try:
                     amount = float(cleaned_amount_str)
