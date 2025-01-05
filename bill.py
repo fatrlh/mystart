@@ -63,7 +63,6 @@ def process_data(intermediate_2, output_file):
                 # 转换为数字
                 try:
                     amount = float(cleaned_amount_str)
-                    print(f"Amount converted to float: {amount}")  # 调试信息：打印转换后的金额
                     # 根据关键词分类
                     if '燃气' in line:
                         print("Matched '燃气'")  # 调试信息：打印匹配的关键字
