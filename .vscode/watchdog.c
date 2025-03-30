@@ -5,14 +5,7 @@
 
 #define TARGET_PATH TEXT("c:\\windows\\healthuse.exe")
 #define TARGET_NAME TEXT("healthuse.exe")
-
-// Wait for space key
-void WaitForSpace() {
-    _tprintf(TEXT("Press SPACE to continue...\n"));
-    while (getchar() != ' ') {
-        // Wait for space
-    }
-}
+#define CHECK_INTERVAL 3000   // 3 seconds
 
 // Print with timestamp
 void Log(const TCHAR* message) {
@@ -20,12 +13,12 @@ void Log(const TCHAR* message) {
     GetLocalTime(&st);
     _tprintf(TEXT("[%02d:%02d:%02d] %s\n"), 
         st.wHour, st.wMinute, st.wSecond, message);
+    fflush(stdout);
 }
 
 // Check if process is running
 BOOL IsProcessRunning() {
-    Log(TEXT("Step 1: Creating process snapshot"));
-    WaitForSpace();
+    Log(TEXT("Checking process status"));
     
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
@@ -33,9 +26,6 @@ BOOL IsProcessRunning() {
         return FALSE;
     }
 
-    Log(TEXT("Step 2: Scanning processes"));
-    WaitForSpace();
-    
     PROCESSENTRY32 pe32 = { sizeof(pe32) };
     BOOL found = FALSE;
 
@@ -49,26 +39,23 @@ BOOL IsProcessRunning() {
     }
 
     CloseHandle(snapshot);
-    
-    Log(found ? TEXT("Process found") : TEXT("Process not found"));
+    Log(found ? TEXT("Process is running") : TEXT("Process not found"));
     return found;
 }
 
-// Try to start process
-void TryStartProcess() {
-    Log(TEXT("Step 3: Starting process"));
-    WaitForSpace();
+// Start the process
+void StartProcess() {
+    Log(TEXT("Attempting to start process"));
     
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
 
-    // 使用完整路径启动进程
     if (CreateProcess(
-        TARGET_PATH,    // 使用完整路径
-        NULL,           // 无命令行参数
+        TARGET_PATH,    // Full path
+        NULL,           // No command line
         NULL, NULL, FALSE, 
-        0,             // 默认标志
-        NULL, NULL,    // 使用当前环境和目录
+        0,             // Default flags
+        NULL, NULL,    // Use current environment and directory
         &si, &pi)) 
     {
         Log(TEXT("Process started successfully"));
@@ -80,23 +67,18 @@ void TryStartProcess() {
         Log(TEXT("Failed to start process"));
         _tprintf(TEXT("Error code: %d\n"), error);
     }
-    
-    WaitForSpace();
 }
 
 int main() {
-    Log(TEXT("Watchdog starting..."));
-    Log(TEXT("Target process: healthuse.exe"));
-    WaitForSpace();
+    Log(TEXT("Watchdog started"));
+    Log(TEXT("Target: healthuse.exe"));
+    Log(TEXT("Press Ctrl+C to exit\n"));
 
     while (1) {
         if (!IsProcessRunning()) {
-            TryStartProcess();
+            StartProcess();
         }
-        
-        Log(TEXT("Waiting 3 seconds..."));
-        WaitForSpace();
-        Sleep(3000);
+        Sleep(CHECK_INTERVAL);
     }
 
     return 0;
