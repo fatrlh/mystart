@@ -6,7 +6,7 @@
 
 #define TARGET_PROCESS_PATH TEXT("c:\\windows\\healthuse.exe")
 #define TARGET_PROCESS_NAME TEXT("healthuse.exe")
-#define WATCH_INTERVAL 1000  // 1秒检查一次
+#define WATCH_INTERVAL 3000  // 3秒检查一次
 
 void PrintStatus(const TCHAR* message) {
     SYSTEMTIME st;
@@ -76,10 +76,16 @@ int main(int argc, char* argv[]) {
     _tprintf(TEXT("Press Ctrl+C to exit\n\n"));
 
     while (1) {
+        PrintStatus(TEXT("Checking process status..."));  // 添加循环状态打印
+        
         if (!IsProcessRunning(TARGET_PROCESS_NAME)) {
             PrintStatus(TEXT("Target process not found, attempting to start..."));
             StartTargetProcess();
         }
+        else {
+            PrintStatus(TEXT("Target process is running"));  // 添加进程运行状态打印
+        }
+        
         Sleep(WATCH_INTERVAL);
     }
 
