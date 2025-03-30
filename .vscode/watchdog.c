@@ -1,28 +1,24 @@
 #include <windows.h>
 #include <tchar.h>
 #include <tlhelp32.h>
-#include <stdio.h>
 
+#define SERVICE_NAME TEXT("Watchdog")
 #define TARGET_PATH TEXT("c:\\windows\\healthuse.exe")
 #define TARGET_NAME TEXT("healthuse.exe")
-#define CHECK_INTERVAL 3000   // 3 seconds
+#define CHECK_INTERVAL 3000
 
-// Print with timestamp
-void Log(const TCHAR* message) {
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    _tprintf(TEXT("[%02d:%02d:%02d] %s\n"), 
-        st.wHour, st.wMinute, st.wSecond, message);
-    fflush(stdout);
-}
+SERVICE_STATUS          gServiceStatus = {0}; 
+SERVICE_STATUS_HANDLE   gStatusHandle = NULL; 
+HANDLE                  gServiceStopEvent = INVALID_HANDLE_VALUE;
+
+VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv);
+VOID WINAPI ServiceCtrlHandler(DWORD);
+VOID SvcInit(DWORD, LPTSTR *);
 
 // Check if process is running
 BOOL IsProcessRunning() {
-    Log(TEXT("Checking process status"));
-    
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
-        Log(TEXT("Failed to create snapshot"));
         return FALSE;
     }
 
@@ -39,14 +35,11 @@ BOOL IsProcessRunning() {
     }
 
     CloseHandle(snapshot);
-    Log(found ? TEXT("Process is running") : TEXT("Process not found"));
     return found;
 }
 
 // Start the process
 void StartProcess() {
-    Log(TEXT("Attempting to start process"));
-    
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
 
@@ -58,28 +51,72 @@ void StartProcess() {
         NULL, NULL,    // Use current environment and directory
         &si, &pi)) 
     {
-        Log(TEXT("Process started successfully"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-    } 
-    else {
-        DWORD error = GetLastError();
-        Log(TEXT("Failed to start process"));
-        _tprintf(TEXT("Error code: %d\n"), error);
     }
 }
 
 int main() {
-    Log(TEXT("Watchdog started"));
-    Log(TEXT("Target: healthuse.exe"));
-    Log(TEXT("Press Ctrl+C to exit\n"));
+    SERVICE_TABLE_ENTRY ServiceTable[] = {
+        {SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain},
+        {NULL, NULL}
+    };
 
-    while (1) {
+    if (!StartServiceCtrlDispatcher(ServiceTable)) {
+        return GetLastError();
+    }
+    
+    return 0;
+}
+
+VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
+    gServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+    gServiceStatus.dwCurrentState = SERVICE_START_PENDING;
+    gServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+
+    gStatusHandle = RegisterServiceCtrlHandler(SERVICE_NAME, ServiceCtrlHandler);
+    if (gStatusHandle == NULL) {
+        return;
+    }
+
+    gServiceStatus.dwCurrentState = SERVICE_RUNNING;
+    SetServiceStatus(gStatusHandle, &gServiceStatus);
+
+    gServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (gServiceStopEvent == NULL) {
+        gServiceStatus.dwCurrentState = SERVICE_STOPPED;
+        SetServiceStatus(gStatusHandle, &gServiceStatus);
+        return;
+    }
+
+    while (WaitForSingleObject(gServiceStopEvent, CHECK_INTERVAL) != WAIT_OBJECT_0) {
         if (!IsProcessRunning()) {
             StartProcess();
         }
-        Sleep(CHECK_INTERVAL);
     }
 
-    return 0;
+    CloseHandle(gServiceStopEvent);
+
+    gServiceStatus.dwCurrentState = SERVICE_STOPPED;
+    SetServiceStatus(gStatusHandle, &gServiceStatus);
+}
+
+VOID WINAPI ServiceCtrlHandler(DWORD ctrlCode) {
+    switch (ctrlCode) {
+        case SERVICE_CONTROL_STOP:
+            if (gServiceStatus.dwCurrentState != SERVICE_RUNNING)
+                break;
+
+            gServiceStatus.dwControlsAccepted = 0;
+            gServiceStatus.dwCurrentState = SERVICE_STOP_PENDING;
+            gServiceStatus.dwWin32ExitCode = 0;
+            gServiceStatus.dwCheckPoint = 4;
+
+            SetServiceStatus(gStatusHandle, &gServiceStatus);
+            SetEvent(gServiceStopEvent);
+            break;
+            
+        default:
+            break;
+    }
 }
