@@ -59,6 +59,7 @@ VOID StartTargetProcess(void) {
     ZeroMemory(&pi, sizeof(pi));
 
     PrintStatus(TEXT("Starting process..."));
+    PrintStatus(TEXT("Target path is: ") TARGET_PROCESS_PATH);  // 添加路径信息
 
     if (CreateProcess(NULL,
         TARGET_PROCESS_PATH,
@@ -77,9 +78,23 @@ VOID StartTargetProcess(void) {
     }
     else
     {
+        DWORD error = GetLastError();
         TCHAR szError[256];
+        TCHAR szErrorMsg[256];
+
+        // 获取系统错误消息
+        FormatMessage(
+            FORMAT_MESSAGE_FROM_SYSTEM,
+            NULL,
+            error,
+            0,
+            szErrorMsg,
+            ARRAYSIZE(szErrorMsg),
+            NULL);
+
         StringCchPrintf(szError, ARRAYSIZE(szError),
-            TEXT("Failed to start process, error code: %d"), GetLastError());
+            TEXT("Failed to start process. Error code: %d, Message: %s"), 
+            error, szErrorMsg);
         PrintStatus(szError);
     }
 }
