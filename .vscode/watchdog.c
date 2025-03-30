@@ -5,6 +5,7 @@
 
 #define SERVICE_NAME TEXT("HealthWatchdog")
 #define TARGET_PROCESS_NAME TEXT("healthuse.exe")
+#define WATCH_INTERVAL 1000  // 固定为1秒
 
 SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
@@ -17,7 +18,6 @@ VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
 BOOL IsProcessRunning(LPCTSTR);
 VOID StartTargetProcess(void);
-DWORD GetWatchInterval(void);
 
 int main(int argc, char* argv[]) {
     SERVICE_TABLE_ENTRY DispatchTable[] = {
@@ -62,13 +62,13 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv) {
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
     while (1) {
-        // 等待服务停止事件
-        WaitForSingleObject(ghSvcStopEvent, GetWatchInterval());
+        // 使用固定的1秒间隔
+        WaitForSingleObject(ghSvcStopEvent, WATCH_INTERVAL);
 
         if (WaitForSingleObject(ghSvcStopEvent, 0) == WAIT_OBJECT_0)
             break;
 
-        // 检查目标进程是否运行
+        // 检查 healthuse.exe 是否运行
         if (!IsProcessRunning(TARGET_PROCESS_NAME)) {
             StartTargetProcess();
         }
@@ -157,27 +157,4 @@ VOID StartTargetProcess(void) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
-}
-
-DWORD GetWatchInterval(void) {
-    HKEY hKey;
-    DWORD interval = 5000; // 默认5秒
-    DWORD dataSize = sizeof(DWORD);
-
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-        TEXT("SOFTWARE\\HealthWatchdog"),
-        0,
-        KEY_READ,
-        &hKey) == ERROR_SUCCESS)
-    {
-        RegQueryValueEx(hKey,
-            TEXT("WatchInterval"),
-            NULL,
-            NULL,
-            (LPBYTE)&interval,
-            &dataSize);
-        RegCloseKey(hKey);
-    }
-
-    return interval;
 }
