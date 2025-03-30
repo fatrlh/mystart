@@ -4,9 +4,9 @@
 #include <stdio.h>
 
 #define TARGET_NAME TEXT("healthuse.exe")
-#define CHECK_INTERVAL 3000   // 3秒检查一次
+#define CHECK_INTERVAL 3000   // Check every 3 seconds
 
-// 记录日志函数
+// Log function
 void LogMessage(const TCHAR* format, ...) {
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -21,13 +21,13 @@ void LogMessage(const TCHAR* format, ...) {
     fflush(stdout);
 }
 
-// 检查进程
+// Check if process is running
 BOOL IsProcessRunning(const TCHAR* processName) {
-    LogMessage(TEXT("检查进程状态"));
+    LogMessage(TEXT("Checking process status"));
     
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
-        LogMessage(TEXT("创建进程快照失败: %d"), GetLastError());
+        LogMessage(TEXT("Failed to create process snapshot: %d"), GetLastError());
         return FALSE;
     }
 
@@ -35,61 +35,88 @@ BOOL IsProcessRunning(const TCHAR* processName) {
     PROCESSENTRY32 pe32 = { sizeof(pe32) };
 
     if (Process32First(snapshot, &pe32)) {
+        LogMessage(TEXT("Scanning processes..."));
         do {
             if (_tcsicmp(pe32.szExeFile, processName) == 0) {
-                LogMessage(TEXT("找到目标进程"));
+                LogMessage(TEXT("Target process found"));
                 found = TRUE;
                 break;
             }
         } while (Process32Next(snapshot, &pe32));
     }
+    else {
+        LogMessage(TEXT("Failed to get first process: %d"), GetLastError());
+    }
 
     if (!found) {
-        LogMessage(TEXT("目标进程未运行"));
+        LogMessage(TEXT("Target process not running"));
     }
 
     CloseHandle(snapshot);
     return found;
 }
 
-// 启动进程
+// Start the process
 BOOL StartProcess(const TCHAR* processName) {
-    LogMessage(TEXT("尝试启动进程"));
+    LogMessage(TEXT("Attempting to start process: %s"), processName);
+
+    TCHAR szPath[MAX_PATH];
+    GetModuleFileName(NULL, szPath, MAX_PATH);
+    *_tcsrchr(szPath, '\\') = '\0';  // Remove executable name
+    _tcscat(szPath, TEXT("\\"));
+    _tcscat(szPath, processName);
+
+    LogMessage(TEXT("Full path: %s"), szPath);
 
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
     BOOL success;
 
     success = CreateProcess(
-        NULL,           // 无可执行文件路径
-        (LPTSTR)processName,  // 命令行
-        NULL,           // 进程安全属性
-        NULL,           // 线程安全属性
-        FALSE,          // 不继承句柄
-        0,             // 无创建标志
-        NULL,           // 使用父进程环境
-        NULL,           // 使用父进程目录
-        &si,            // 启动信息
-        &pi);           // 进程信息
+        szPath,         // Full path to executable
+        NULL,          // Command line
+        NULL,          // Process handle not inheritable
+        NULL,          // Thread handle not inheritable
+        FALSE,         // Set handle inheritance to FALSE
+        0,            // No creation flags
+        NULL,         // Use parent's environment block
+        NULL,         // Use parent's starting directory 
+        &si,          // Pointer to STARTUPINFO structure
+        &pi);         // Pointer to PROCESS_INFORMATION structure
 
     if (success) {
-        LogMessage(TEXT("进程启动成功"));
+        LogMessage(TEXT("Process started successfully"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-    } else {
-        LogMessage(TEXT("进程启动失败: %d"), GetLastError());
+    } 
+    else {
+        DWORD error = GetLastError();
+        TCHAR szError[256];
+        FormatMessage(
+            FORMAT_MESSAGE_FROM_SYSTEM,
+            NULL,
+            error,
+            0,
+            szError,
+            sizeof(szError)/sizeof(TCHAR),
+            NULL);
+        LogMessage(TEXT("Failed to start process. Error %d: %s"), error, szError);
     }
 
     return success;
 }
 
 int main(void) {
-    LogMessage(TEXT("监控程序启动"));
-    LogMessage(TEXT("按 Ctrl+C 退出\n"));
+    LogMessage(TEXT("Watchdog started"));
+    LogMessage(TEXT("Target: %s"), TARGET_NAME);
+    LogMessage(TEXT("Interval: %d seconds"), CHECK_INTERVAL/1000);
+    LogMessage(TEXT("Press Ctrl+C to exit\n"));
 
     while (1) {
         if (!IsProcessRunning(TARGET_NAME)) {
             StartProcess(TARGET_NAME);
+            // Add delay after failed attempt
+            Sleep(1000);
         }
         Sleep(CHECK_INTERVAL);
     }
