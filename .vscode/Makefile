@@ -1,6 +1,6 @@
 CC=x86_64-w64-mingw32-gcc
-CFLAGS=-Wall
-LDFLAGS=-ladvapi32 -lpsapi
+CFLAGS=-Wall -D_UNICODE -DUNICODE
+LDFLAGS=-lgdi32 -luser32
 TARGET=watchdog.exe
 SRCS=watchdog.c
 
