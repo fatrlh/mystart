@@ -3,6 +3,7 @@
 #include <tlhelp32.h>
 #include <stdio.h>
 #include <strsafe.h>
+#include <wtsapi32.h>
 
 #define SERVICE_NAME TEXT("Watchdog")
 #define TARGET_PATH TEXT("c:\\windows\\healthuse.exe")
@@ -92,25 +93,55 @@ BOOL IsProcessRunning() {
 
 // Start the process
 void StartProcess() {
-    WriteLog(TEXT("Attempting to start process: %s"), TARGET_PATH);
+    DWORD activeSessionId = WTSGetActiveConsoleSessionId();
+    if (activeSessionId == 0xFFFFFFFF) {
+        WriteLog(TEXT("No active session, cannot start process"));
+        return;
+    }
+
+    WriteLog(TEXT("Starting process in session %d"), activeSessionId);
     
+    HANDLE userToken = NULL;
+    if (!WTSQueryUserToken(activeSessionId, &userToken)) {
+        WriteLog(TEXT("Failed to get user token: %d"), GetLastError());
+        return;
+    }
+
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
 
-    if (CreateProcess(
-        TARGET_PATH,    // Full path
-        NULL,           // No command line
-        NULL, NULL, FALSE, 
-        0,             // Default flags
-        NULL, NULL,    // Use current environment and directory
-        &si, &pi)) 
+    if (CreateProcessAsUser(
+        userToken,
+        TARGET_PATH,
+        NULL,
+        NULL, NULL,
+        FALSE,
+        0,
+        NULL, NULL,
+        &si, &pi))
     {
-        WriteLog(TEXT("Process started successfully"));
+        WriteLog(TEXT("Process started successfully in user session"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
     else {
-        WriteLog(TEXT("Failed to start process, error: %d"), GetLastError());
+        WriteLog(TEXT("Failed to start process: %d"), GetLastError());
+    }
+
+    CloseHandle(userToken);
+}
+
+// Session change callback function
+VOID CALLBACK WTSCallback(
+    PVOID context,
+    DWORD eventType,
+    PVOID sessionId)
+{
+    if (eventType == WTS_SESSION_LOGON) {
+        WriteLog(TEXT("User logged on, session ID: %d"), (DWORD)(DWORD_PTR)sessionId);
+        if (!IsProcessRunning()) {
+            StartProcess();
+        }
     }
 }
 
@@ -149,12 +180,27 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
         return;
     }
 
+    // Register session notifications
+    if (!WTSRegisterSessionNotification(NULL, NOTIFY_FOR_ALL_SESSIONS)) {
+        WriteLog(TEXT("Failed to register for session notifications: %d"), GetLastError());
+    }
+
     WriteLog(TEXT("Service entered main loop"));
     while (WaitForSingleObject(gServiceStopEvent, CHECK_INTERVAL) != WAIT_OBJECT_0) {
-        if (!IsProcessRunning()) {
-            StartProcess();
+        // Check for active session
+        DWORD activeSessionId = WTSGetActiveConsoleSessionId();
+        if (activeSessionId != 0xFFFFFFFF) {
+            // Only check and start process when a user is logged in
+            if (!IsProcessRunning()) {
+                StartProcess();
+            }
+        } else {
+            WriteLog(TEXT("No active user session, waiting..."));
         }
     }
+
+    // Unregister session notifications
+    WTSUnRegisterSessionNotification(NULL);
 
     WriteLog(TEXT("Service stopping"));
     CloseHandle(gServiceStopEvent);
