@@ -1,120 +1,97 @@
 #include <windows.h>
 #include <tchar.h>
-#include <strsafe.h>
 #include <tlhelp32.h>
 #include <stdio.h>
 
-#define TARGET_PROCESS_PATH TEXT("c:\\windows\\healthuse.exe")
-#define TARGET_PROCESS_NAME TEXT("healthuse.exe")
-#define WATCH_INTERVAL 3000  // 3秒检查一次
+#define TARGET_NAME TEXT("healthuse.exe")
+#define CHECK_INTERVAL 3000   // 3秒检查一次
 
-void PrintStatus(const TCHAR* message) {
+// 记录日志函数
+void LogMessage(const TCHAR* format, ...) {
     SYSTEMTIME st;
     GetLocalTime(&st);
-    _tprintf(TEXT("[%02d:%02d:%02d] %s\n"), 
-        st.wHour, st.wMinute, st.wSecond, message);
+    _tprintf(TEXT("[%02d:%02d:%02d] "), st.wHour, st.wMinute, st.wSecond);
+    
+    va_list args;
+    va_start(args, format);
+    _vftprintf(stdout, format, args);
+    va_end(args);
+    
+    _tprintf(TEXT("\n"));
+    fflush(stdout);
 }
 
-BOOL IsProcessRunning(LPCTSTR processName) {
-    PrintStatus(TEXT("Creating process snapshot..."));
+// 检查进程
+BOOL IsProcessRunning(const TCHAR* processName) {
+    LogMessage(TEXT("检查进程状态"));
     
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
-        PrintStatus(TEXT("Failed to create process snapshot"));
+        LogMessage(TEXT("创建进程快照失败: %d"), GetLastError());
         return FALSE;
     }
 
-    PROCESSENTRY32 processEntry;
-    processEntry.dwSize = sizeof(processEntry);
+    BOOL found = FALSE;
+    PROCESSENTRY32 pe32 = { sizeof(pe32) };
 
-    BOOL processFound = FALSE;
-    if (Process32First(snapshot, &processEntry)) {
-        PrintStatus(TEXT("Enumerating processes..."));
+    if (Process32First(snapshot, &pe32)) {
         do {
-            if (_tcsicmp(processEntry.szExeFile, processName) == 0) {
-                PrintStatus(TEXT("Found target process"));
-                processFound = TRUE;
+            if (_tcsicmp(pe32.szExeFile, processName) == 0) {
+                LogMessage(TEXT("找到目标进程"));
+                found = TRUE;
                 break;
             }
-        } while (Process32Next(snapshot, &processEntry));
-        
-        if (!processFound) {
-            PrintStatus(TEXT("Process not found in system"));
-        }
+        } while (Process32Next(snapshot, &pe32));
     }
-    else {
-        PrintStatus(TEXT("Failed to enumerate processes"));
+
+    if (!found) {
+        LogMessage(TEXT("目标进程未运行"));
     }
 
     CloseHandle(snapshot);
-    return processFound;
+    return found;
 }
 
-VOID StartTargetProcess(void) {
-    STARTUPINFO si;
+// 启动进程
+BOOL StartProcess(const TCHAR* processName) {
+    LogMessage(TEXT("尝试启动进程"));
+
+    STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
+    BOOL success;
 
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    ZeroMemory(&pi, sizeof(pi));
+    success = CreateProcess(
+        NULL,           // 无可执行文件路径
+        (LPTSTR)processName,  // 命令行
+        NULL,           // 进程安全属性
+        NULL,           // 线程安全属性
+        FALSE,          // 不继承句柄
+        0,             // 无创建标志
+        NULL,           // 使用父进程环境
+        NULL,           // 使用父进程目录
+        &si,            // 启动信息
+        &pi);           // 进程信息
 
-    PrintStatus(TEXT("Starting process..."));
-    PrintStatus(TEXT("Target path is: ") TARGET_PROCESS_PATH);  // 添加路径信息
-
-    if (CreateProcess(NULL,
-        TARGET_PROCESS_PATH,
-        NULL,
-        NULL,
-        FALSE,
-        0,
-        NULL,
-        NULL,
-        &si,
-        &pi))
-    {
-        PrintStatus(TEXT("Process started successfully"));
+    if (success) {
+        LogMessage(TEXT("进程启动成功"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+    } else {
+        LogMessage(TEXT("进程启动失败: %d"), GetLastError());
     }
-    else
-    {
-        DWORD error = GetLastError();
-        TCHAR szError[256];
-        TCHAR szErrorMsg[256];
 
-        // 获取系统错误消息
-        FormatMessage(
-            FORMAT_MESSAGE_FROM_SYSTEM,
-            NULL,
-            error,
-            0,
-            szErrorMsg,
-            ARRAYSIZE(szErrorMsg),
-            NULL);
-
-        StringCchPrintf(szError, ARRAYSIZE(szError),
-            TEXT("Failed to start process. Error code: %d, Message: %s"), 
-            error, szErrorMsg);
-        PrintStatus(szError);
-    }
+    return success;
 }
 
-int main(int argc, char* argv[]) {
-    _tprintf(TEXT("Watchdog started...\n"));
-    _tprintf(TEXT("Press Ctrl+C to exit\n\n"));
+int main(void) {
+    LogMessage(TEXT("监控程序启动"));
+    LogMessage(TEXT("按 Ctrl+C 退出\n"));
 
     while (1) {
-        PrintStatus(TEXT("Checking process status..."));  // 添加循环状态打印
-        
-        if (!IsProcessRunning(TARGET_PROCESS_NAME)) {
-            PrintStatus(TEXT("Target process not found, attempting to start..."));
-            StartTargetProcess();
+        if (!IsProcessRunning(TARGET_NAME)) {
+            StartProcess(TARGET_NAME);
         }
-        else {
-            PrintStatus(TEXT("Target process is running"));  // 添加进程运行状态打印
-        }
-        
-        Sleep(WATCH_INTERVAL);
+        Sleep(CHECK_INTERVAL);
     }
 
     return 0;
