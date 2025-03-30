@@ -3,6 +3,7 @@
 #include <tlhelp32.h>
 #include <stdio.h>
 
+#define TARGET_PATH TEXT("c:\\windows\\healthuse.exe")
 #define TARGET_NAME TEXT("healthuse.exe")
 
 // Wait for space key
@@ -61,14 +62,26 @@ void TryStartProcess() {
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
 
-    if (CreateProcess(NULL, TARGET_NAME, NULL, NULL, FALSE, 
-        0, NULL, NULL, &si, &pi)) {
+    // 使用完整路径启动进程
+    if (CreateProcess(
+        TARGET_PATH,    // 使用完整路径
+        NULL,           // 无命令行参数
+        NULL, NULL, FALSE, 
+        0,             // 默认标志
+        NULL, NULL,    // 使用当前环境和目录
+        &si, &pi)) 
+    {
         Log(TEXT("Process started successfully"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-    } else {
+    } 
+    else {
+        DWORD error = GetLastError();
         Log(TEXT("Failed to start process"));
+        _tprintf(TEXT("Error code: %d\n"), error);
     }
+    
+    WaitForSpace();
 }
 
 int main() {
