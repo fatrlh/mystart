@@ -45,7 +45,7 @@ VOID StartTargetProcess(void) {
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    PrintStatus(TEXT("正在启动进程..."));
+    PrintStatus(TEXT("Starting process..."));
 
     if (CreateProcess(NULL,
         TARGET_PROCESS_PATH,
@@ -58,7 +58,7 @@ VOID StartTargetProcess(void) {
         &si,
         &pi))
     {
-        PrintStatus(TEXT("进程启动成功"));
+        PrintStatus(TEXT("Process started successfully"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
@@ -66,18 +66,18 @@ VOID StartTargetProcess(void) {
     {
         TCHAR szError[256];
         StringCchPrintf(szError, ARRAYSIZE(szError),
-            TEXT("进程启动失败，错误码：%d"), GetLastError());
+            TEXT("Failed to start process, error code: %d"), GetLastError());
         PrintStatus(szError);
     }
 }
 
 int main(int argc, char* argv[]) {
-    _tprintf(TEXT("监视程序启动...\n"));
-    _tprintf(TEXT("按 Ctrl+C 退出\n\n"));
+    _tprintf(TEXT("Watchdog started...\n"));
+    _tprintf(TEXT("Press Ctrl+C to exit\n\n"));
 
     while (1) {
         if (!IsProcessRunning(TARGET_PROCESS_NAME)) {
-            PrintStatus(TEXT("未检测到目标进程，准备启动..."));
+            PrintStatus(TEXT("Target process not found, attempting to start..."));
             StartTargetProcess();
         }
         Sleep(WATCH_INTERVAL);
