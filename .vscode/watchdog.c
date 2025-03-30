@@ -16,21 +16,34 @@ void PrintStatus(const TCHAR* message) {
 }
 
 BOOL IsProcessRunning(LPCTSTR processName) {
+    PrintStatus(TEXT("Creating process snapshot..."));
+    
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE)
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        PrintStatus(TEXT("Failed to create process snapshot"));
         return FALSE;
+    }
 
     PROCESSENTRY32 processEntry;
     processEntry.dwSize = sizeof(processEntry);
 
     BOOL processFound = FALSE;
     if (Process32First(snapshot, &processEntry)) {
+        PrintStatus(TEXT("Enumerating processes..."));
         do {
             if (_tcsicmp(processEntry.szExeFile, processName) == 0) {
+                PrintStatus(TEXT("Found target process"));
                 processFound = TRUE;
                 break;
             }
         } while (Process32Next(snapshot, &processEntry));
+        
+        if (!processFound) {
+            PrintStatus(TEXT("Process not found in system"));
+        }
+    }
+    else {
+        PrintStatus(TEXT("Failed to enumerate processes"));
     }
 
     CloseHandle(snapshot);
