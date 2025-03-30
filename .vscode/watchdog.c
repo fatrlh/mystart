@@ -7,11 +7,13 @@
 #define TARGET_PROCESS_PATH TEXT("c:\\windows\\healthuse.exe")  // 启动时使用的全路径
 #define TARGET_PROCESS_NAME TEXT("healthuse.exe")              // 检测时使用的文件名
 #define WATCH_INTERVAL 3000  // 固定为1秒
-#define LOG_FILE TEXT(".\\watchdog.log")
 
 SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
 HANDLE                  ghSvcStopEvent = NULL;
+HWND                    g_hWndStatus = NULL;
+#define WM_ADD_LOG (WM_USER + 100)
+#define ID_EDIT_STATUS 1001
 
 // 函数声明
 VOID WINAPI SvcMain(DWORD, LPTSTR*);
@@ -20,7 +22,6 @@ VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
 BOOL IsProcessRunning(LPCTSTR);
 VOID StartTargetProcess(void);
-VOID WriteLog(LPCTSTR);
 
 int main(int argc, char* argv[]) {
     SERVICE_TABLE_ENTRY DispatchTable[] = {
@@ -51,7 +52,37 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv) {
 }
 
 VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv) {
-    WriteLog(TEXT("服务启动..."));
+    // 创建状态窗口
+    WNDCLASSEX wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = DefWindowProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = TEXT("WatchdogStatus");
+    RegisterClassEx(&wc);
+
+    g_hWndStatus = CreateWindow(
+        TEXT("WatchdogStatus"),
+        TEXT("Watchdog Status"),
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        400, 300,
+        NULL,
+        NULL,
+        GetModuleHandle(NULL),
+        NULL);
+
+    HWND hEdit = CreateWindow(
+        TEXT("EDIT"),
+        TEXT(""),
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+        0, 0, 400, 300,
+        g_hWndStatus,
+        (HMENU)ID_EDIT_STATUS,
+        GetModuleHandle(NULL),
+        NULL);
+
+    ShowWindow(g_hWndStatus, SW_SHOW);
+    UpdateWindow(g_hWndStatus);
 
     ghSvcStopEvent = CreateEvent(
         NULL,
@@ -67,22 +98,28 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv) {
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
     while (1) {
-        // 使用固定的1秒间隔
         WaitForSingleObject(ghSvcStopEvent, WATCH_INTERVAL);
 
-        if (WaitForSingleObject(ghSvcStopEvent, 0) == WAIT_OBJECT_0) {
-            WriteLog(TEXT("收到停止信号"));
+        if (WaitForSingleObject(ghSvcStopEvent, 0) == WAIT_OBJECT_0)
             break;
-        }
 
         // 检查 healthuse.exe 是否运行
         if (!IsProcessRunning(TARGET_PROCESS_NAME)) {
-            WriteLog(TEXT("未检测到目标进程，准备启动..."));
+            SendMessage(hEdit, EM_SETSEL, -1, -1);
+            SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)TEXT("未检测到进程，准备启动...\r\n"));
             StartTargetProcess();
+            SendMessage(hEdit, EM_SETSEL, -1, -1);
+            SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)TEXT("启动进程完成\r\n"));
+        }
+        
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
         }
     }
 
-    WriteLog(TEXT("服务停止"));
+    DestroyWindow(g_hWndStatus);
     ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
 }
 
@@ -145,18 +182,19 @@ BOOL IsProcessRunning(LPCTSTR processName) {
 }
 
 VOID StartTargetProcess(void) {
-    WriteLog(TEXT("尝试启动进程"));
-
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
+    HWND hEdit = GetDlgItem(g_hWndStatus, ID_EDIT_STATUS);
 
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    // 启动目标进程时使用全路径
+    SendMessage(hEdit, EM_SETSEL, -1, -1);
+    SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)TEXT("正在启动进程...\r\n"));
+
     if (CreateProcess(NULL,
-        TARGET_PROCESS_PATH,  // 使用全路径
+        TARGET_PROCESS_PATH,
         NULL,
         NULL,
         FALSE,
@@ -166,7 +204,8 @@ VOID StartTargetProcess(void) {
         &si,
         &pi))
     {
-        WriteLog(TEXT("进程启动成功"));
+        SendMessage(hEdit, EM_SETSEL, -1, -1);
+        SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)TEXT("进程启动成功\r\n"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
@@ -174,37 +213,8 @@ VOID StartTargetProcess(void) {
     {
         TCHAR szError[256];
         StringCchPrintf(szError, ARRAYSIZE(szError),
-            TEXT("进程启动失败，错误码：%d"), GetLastError());
-        WriteLog(szError);
+            TEXT("进程启动失败，错误码：%d\r\n"), GetLastError());
+        SendMessage(hEdit, EM_SETSEL, -1, -1);
+        SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)szError);
     }
-}
-
-VOID WriteLog(LPCTSTR message) {
-    HANDLE hFile = CreateFile(LOG_FILE,
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ,
-        NULL,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL);
-        
-    if (hFile == INVALID_HANDLE_VALUE) 
-        return;
-
-    // 获取当前时间
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    
-    // 格式化日志消息
-    TCHAR logBuffer[1024];
-    StringCchPrintf(logBuffer, ARRAYSIZE(logBuffer),
-        TEXT("[%02d:%02d:%02d.%03d] %s\r\n"),
-        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-        message);
-    
-    // 写入日志
-    DWORD bytesWritten;
-    WriteFile(hFile, logBuffer, lstrlen(logBuffer) * sizeof(TCHAR), &bytesWritten, NULL);
-    
-    CloseHandle(hFile);
 }
