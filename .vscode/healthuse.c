@@ -98,14 +98,31 @@ ATOM RegisterWndClass(HINSTANCE hInstance)
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
+    // 创建窗口时先用最小尺寸
     g_hWnd = CreateWindow(TEXT("HealthUseClass"), 
         TEXT("健康使用"),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-        CW_USEDEFAULT, CW_USEDEFAULT, 200, 100,
+        CW_USEDEFAULT, CW_USEDEFAULT, 10, 10,  // 初始尺寸很小
         NULL, NULL, hInstance, NULL);
     
     if (!g_hWnd)
         return FALSE;
+    
+    // 获取文本尺寸并调整窗口
+    HDC hdc = GetDC(g_hWnd);
+    SIZE sz = {0};
+    GetTextExtentPoint32(hdc, g_szTimeRange, lstrlen(g_szTimeRange), &sz);
+    ReleaseDC(g_hWnd, hdc);
+    
+    // 计算窗口尺寸（添加边距和标题栏高度）
+    RECT rect = {0, 0, sz.cx + 20, sz.cy + 20};  // 左右各加10像素边距
+    AdjustWindowRect(&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
+    
+    // 设置窗口新尺寸
+    SetWindowPos(g_hWnd, NULL, 0, 0, 
+        rect.right - rect.left, 
+        rect.bottom - rect.top,
+        SWP_NOMOVE | SWP_NOZORDER);
     
     ShowWindow(g_hWnd, nCmdShow);
     UpdateWindow(g_hWnd);
@@ -128,10 +145,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
+            
+            // 获取客户区大小
             RECT rt;
             GetClientRect(hWnd, &rt);
+            
+            // 设置透明背景
+            SetBkMode(hdc, TRANSPARENT);
+            
+            // 居中显示文本
             DrawText(hdc, g_szTimeRange, -1, &rt, 
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                    
             EndPaint(hWnd, &ps);
             break;
         }
@@ -153,6 +178,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 SyncSystemTime();
             }
+            break;
+        }
+        
+        case WM_SIZE:
+        {
+            InvalidateRect(hWnd, NULL, TRUE);
             break;
         }
         
