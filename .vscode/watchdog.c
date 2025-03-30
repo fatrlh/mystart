@@ -3,9 +3,10 @@
 #include <strsafe.h>
 #include <tlhelp32.h>  // 添加此头文件用于进程枚举相关API
 
-#define SERVICE_NAME TEXT("HealthWatchdog")
-#define TARGET_PROCESS_NAME TEXT("healthuse.exe")
-#define WATCH_INTERVAL 1000  // 固定为1秒
+#define SERVICE_NAME TEXT("Watchdog")
+#define TARGET_PROCESS_PATH TEXT("c:\\windows\\healthuse.exe")  // 启动时使用的全路径
+#define TARGET_PROCESS_NAME TEXT("healthuse.exe")              // 检测时使用的文件名
+#define WATCH_INTERVAL 3000  // 固定为1秒
 
 SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
@@ -123,7 +124,8 @@ BOOL IsProcessRunning(LPCTSTR processName) {
     BOOL processFound = FALSE;
     if (Process32First(snapshot, &processEntry)) {
         do {
-            if (_tcsicmp(processEntry.szExeFile, processName) == 0) {
+            // 这里比较的是纯文件名
+            if (_tcsicmp(processEntry.szExeFile, TARGET_PROCESS_NAME) == 0) {
                 processFound = TRUE;
                 break;
             }
@@ -142,9 +144,9 @@ VOID StartTargetProcess(void) {
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    // 启动目标进程
+    // 启动目标进程时使用全路径
     if (CreateProcess(NULL,
-        TARGET_PROCESS_NAME,
+        TARGET_PROCESS_PATH,  // 使用全路径
         NULL,
         NULL,
         FALSE,
