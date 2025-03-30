@@ -1,11 +1,14 @@
 #include <windows.h>
 #include <tchar.h>
 #include <tlhelp32.h>
+#include <stdio.h>
+#include <strsafe.h>
 
 #define SERVICE_NAME TEXT("Watchdog")
 #define TARGET_PATH TEXT("c:\\windows\\healthuse.exe")
 #define TARGET_NAME TEXT("healthuse.exe")
 #define CHECK_INTERVAL 3000
+#define LOG_FILE TEXT("C:\\Windows\\watchdog.log")
 
 SERVICE_STATUS          gServiceStatus = {0}; 
 SERVICE_STATUS_HANDLE   gStatusHandle = NULL; 
@@ -15,10 +18,58 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv);
 VOID WINAPI ServiceCtrlHandler(DWORD);
 VOID SvcInit(DWORD, LPTSTR *);
 
+// Write log function
+void WriteLog(const TCHAR* format, ...) {
+    HANDLE hFile = CreateFile(
+        LOG_FILE,
+        FILE_APPEND_DATA,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        
+        TCHAR buffer[1024];
+        TCHAR timeBuffer[32];
+        // 先创建时间戳
+        StringCchPrintf(timeBuffer, ARRAYSIZE(timeBuffer), 
+            TEXT("[%02d:%02d:%02d] "), 
+            st.wHour, st.wMinute, st.wSecond);
+
+        // 复制时间戳到主缓冲区
+        StringCchCopy(buffer, ARRAYSIZE(buffer), timeBuffer);
+        size_t timeLen;
+        StringCchLength(timeBuffer, ARRAYSIZE(timeBuffer), &timeLen);
+
+        // 添加消息内容
+        va_list args;
+        va_start(args, format);
+        StringCchVPrintf(buffer + timeLen, ARRAYSIZE(buffer) - timeLen, format, args);
+        va_end(args);
+
+        // 添加换行
+        size_t msgLen;
+        StringCchLength(buffer, ARRAYSIZE(buffer), &msgLen);
+        StringCchCat(buffer, ARRAYSIZE(buffer), TEXT("\r\n"));
+        
+        // 写入文件
+        DWORD written;
+        WriteFile(hFile, buffer, (DWORD)(_tcslen(buffer) * sizeof(TCHAR)), &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
 // Check if process is running
 BOOL IsProcessRunning() {
+    WriteLog(TEXT("Checking process status"));
+    
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
+        WriteLog(TEXT("Failed to create snapshot"));
         return FALSE;
     }
 
@@ -35,11 +86,14 @@ BOOL IsProcessRunning() {
     }
 
     CloseHandle(snapshot);
+    WriteLog(found ? TEXT("Process is running") : TEXT("Process not found"));
     return found;
 }
 
 // Start the process
 void StartProcess() {
+    WriteLog(TEXT("Attempting to start process: %s"), TARGET_PATH);
+    
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
 
@@ -51,8 +105,12 @@ void StartProcess() {
         NULL, NULL,    // Use current environment and directory
         &si, &pi)) 
     {
+        WriteLog(TEXT("Process started successfully"));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+    }
+    else {
+        WriteLog(TEXT("Failed to start process, error: %d"), GetLastError());
     }
 }
 
@@ -70,6 +128,8 @@ int main() {
 }
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
+    WriteLog(TEXT("Service starting"));
+    
     gServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     gServiceStatus.dwCurrentState = SERVICE_START_PENDING;
     gServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
@@ -89,12 +149,14 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
         return;
     }
 
+    WriteLog(TEXT("Service entered main loop"));
     while (WaitForSingleObject(gServiceStopEvent, CHECK_INTERVAL) != WAIT_OBJECT_0) {
         if (!IsProcessRunning()) {
             StartProcess();
         }
     }
 
+    WriteLog(TEXT("Service stopping"));
     CloseHandle(gServiceStopEvent);
 
     gServiceStatus.dwCurrentState = SERVICE_STOPPED;
