@@ -1,0 +1,15 @@
+CC=x86_64-w64-mingw32-gcc
+CFLAGS=-Wall -D_UNICODE -DUNICODE
+LDFLAGS=-lwininet -lgdi32 -luser32 -lntdll -lws2_32
+TARGET=healthuse.exe
+SRCS=healthuse.c
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(SRCS)
+	   $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+clean:
+	   rm -f $(TARGET)
