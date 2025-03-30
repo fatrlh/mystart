@@ -131,20 +131,6 @@ void StartProcess() {
     CloseHandle(userToken);
 }
 
-// Session change callback function
-VOID CALLBACK WTSCallback(
-    PVOID context,
-    DWORD eventType,
-    PVOID sessionId)
-{
-    if (eventType == WTS_SESSION_LOGON) {
-        WriteLog(TEXT("User logged on, session ID: %d"), (DWORD)(DWORD_PTR)sessionId);
-        if (!IsProcessRunning()) {
-            StartProcess();
-        }
-    }
-}
-
 int main() {
     SERVICE_TABLE_ENTRY ServiceTable[] = {
         {SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain},
@@ -180,27 +166,12 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
         return;
     }
 
-    // Register session notifications
-    if (!WTSRegisterSessionNotification(NULL, NOTIFY_FOR_ALL_SESSIONS)) {
-        WriteLog(TEXT("Failed to register for session notifications: %d"), GetLastError());
-    }
-
     WriteLog(TEXT("Service entered main loop"));
     while (WaitForSingleObject(gServiceStopEvent, CHECK_INTERVAL) != WAIT_OBJECT_0) {
-        // Check for active session
-        DWORD activeSessionId = WTSGetActiveConsoleSessionId();
-        if (activeSessionId != 0xFFFFFFFF) {
-            // Only check and start process when a user is logged in
-            if (!IsProcessRunning()) {
-                StartProcess();
-            }
-        } else {
-            WriteLog(TEXT("No active user session, waiting..."));
+        if (!IsProcessRunning()) {
+            StartProcess();
         }
     }
-
-    // Unregister session notifications
-    WTSUnRegisterSessionNotification(NULL);
 
     WriteLog(TEXT("Service stopping"));
     CloseHandle(gServiceStopEvent);
