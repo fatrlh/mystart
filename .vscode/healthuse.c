@@ -5,6 +5,7 @@
 #include <time.h>
 #include <strsafe.h>
 #include <ws2tcpip.h>
+#include <shellapi.h>
 
 #define DEFAULT_TIME TEXT("00:00-09:00")
 #define CHECK_INTERVAL 30000  // 30秒检查一次远程配置
@@ -12,6 +13,8 @@
 #define REMOTE_URL TEXT("http://139.9.215.145/lock/lockscr.txt")
 #define REMOTE_URL_HTTPS TEXT("https://139.9.215.145/lock/lockscr.txt")
 #define WM_CHECKTIME (WM_USER + 1)
+#define WM_TRAYICON (WM_USER + 3)
+#define IDI_TRAYICON 1
 #define NTP_PORT 123
 #define NTP_SERVERS_COUNT 7
 
@@ -54,6 +57,7 @@ typedef struct {
 HINSTANCE g_hInst;
 HWND g_hWnd;
 TCHAR g_szTimeRange[256] = DEFAULT_TIME;
+NOTIFYICONDATA g_nid = {0};
 
 // 函数声明 - 移除 LockWorkStation 的声明，因为它在 winuser.h 中已定义
 ATOM RegisterWndClass(HINSTANCE hInstance);
@@ -98,31 +102,41 @@ ATOM RegisterWndClass(HINSTANCE hInstance)
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-    // 创建窗口时先用最小尺寸
-    g_hWnd = CreateWindow(TEXT("HealthUseClass"), 
+    // 创建窗口时添加 WS_EX_TOOLWINDOW 样式
+    g_hWnd = CreateWindowEx(
+        WS_EX_TOOLWINDOW,    // 使窗口不在任务栏显示
+        TEXT("HealthUseClass"), 
         TEXT("健康使用"),
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-        CW_USEDEFAULT, CW_USEDEFAULT, 10, 10,  // 初始尺寸很小
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 10, 10,
         NULL, NULL, hInstance, NULL);
     
     if (!g_hWnd)
         return FALSE;
     
-    // 获取文本尺寸并调整窗口
+    // 调整窗口大小
     HDC hdc = GetDC(g_hWnd);
     SIZE sz = {0};
     GetTextExtentPoint32(hdc, g_szTimeRange, lstrlen(g_szTimeRange), &sz);
-    ReleaseDC(g_hWnd, hdc);
+    ReleaseDC(g_hWnd, hdc);    // 修正参数顺序：第一个是窗口句柄，第二个是DC句柄
     
-    // 计算窗口尺寸（添加边距和标题栏高度）
-    RECT rect = {0, 0, sz.cx + 20, sz.cy + 20};  // 左右各加10像素边距
-    AdjustWindowRect(&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
+    RECT rect = {0, 0, sz.cx + 20, sz.cy + 20};
+    AdjustWindowRect(&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     
-    // 设置窗口新尺寸
     SetWindowPos(g_hWnd, NULL, 0, 0, 
         rect.right - rect.left, 
         rect.bottom - rect.top,
         SWP_NOMOVE | SWP_NOZORDER);
+
+    // 初始化托盘图标
+    g_nid.cbSize = sizeof(NOTIFYICONDATA);
+    g_nid.hWnd = g_hWnd;
+    g_nid.uID = IDI_TRAYICON;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    StringCchCopy(g_nid.szTip, ARRAYSIZE(g_nid.szTip), TEXT("健康使用"));
+    Shell_NotifyIcon(NIM_ADD, &g_nid);
     
     ShowWindow(g_hWnd, nCmdShow);
     UpdateWindow(g_hWnd);
@@ -181,6 +195,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         
+        case WM_TRAYICON:
+            if (lParam == WM_LBUTTONUP) {
+                ShowWindow(hWnd, SW_SHOW);
+                SetForegroundWindow(hWnd);
+            }
+            break;
+
+        case WM_SYSCOMMAND:
+            if ((wParam & 0xFFF0) == SC_MINIMIZE) {
+                ShowWindow(hWnd, SW_HIDE);
+                return 0;
+            }
+            break;
+
+        case WM_CLOSE:
+            ShowWindow(hWnd, SW_HIDE);
+            return 0;
+
         case WM_SIZE:
         {
             InvalidateRect(hWnd, NULL, TRUE);
@@ -189,6 +221,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         
         case WM_DESTROY:
         {
+            Shell_NotifyIcon(NIM_DELETE, &g_nid);
             KillTimer(hWnd, 1);
             KillTimer(hWnd, 2);
             KillTimer(hWnd, 3);
